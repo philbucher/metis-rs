@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `Graph::node_nd`, an idiomatic wrapper around `METIS_NodeND` for computing
+  fill-reducing nested-dissection orderings (and `examples/ordering.rs`).
+
 ## Version 0.2.2 (2024-10-28)
 
 [metis-sys-0.2.1...0.2.2](https://github.com/LIHPC-Computational-Geometry/metis-rs/compare/metis-0.2.0...metis-0.2.1)

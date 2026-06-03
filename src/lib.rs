@@ -687,6 +687,94 @@ impl<'a> Graph<'a> {
             Ok(edgecut.assume_init())
         }
     }
+
+    /// Computes a fill-reducing ordering of the vertices using multilevel
+    /// nested dissection.
+    ///
+    /// This is the ordering used to reduce fill-in when factoring a sparse
+    /// symmetric matrix (e.g. a Cholesky or LU factorization). The graph must
+    /// be the adjacency structure of a *symmetric* matrix and must **not**
+    /// contain self-loops (no `i` may appear in
+    /// `adjncy[xadj[i]..xadj[i + 1]]`).
+    ///
+    /// On success, `perm` and `iperm` are filled with the fill-reducing
+    /// permutation and its inverse. Letting `A` be the original matrix and `A'`
+    /// the reordered one, `A'[i] = A[perm[i]]` and `A[i] = A'[iperm[i]]`.
+    ///
+    /// The following options affect this routine: [`option::CType`],
+    /// [`option::RType`], [`option::Seed`], [`option::NSeps`],
+    /// [`option::Compress`], [`option::CCOrder`] and [`option::PFactor`]. The
+    /// `ncon` and `nparts` arguments given to [`Graph::new`], as well as any
+    /// vertex/edge/partition weights, are ignored.
+    ///
+    /// Equivalent of `METIS_NodeND`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), metis::Error> {
+    /// # use metis::Graph;
+    /// // Path graph 0 - 1 - 2.
+    /// let xadj = &[0, 1, 3, 4];
+    /// let adjncy = &[1, 0, 2, 1];
+    /// let mut perm = [0; 3];
+    /// let mut iperm = [0; 3];
+    ///
+    /// // ncon and nparts are ignored by node_nd; pass 1.
+    /// Graph::new(1, 1, xadj, adjncy)?.node_nd(&mut perm, &mut iperm)?;
+    ///
+    /// // perm is a permutation of 0..3, and iperm is its inverse.
+    /// let mut sorted = perm;
+    /// sorted.sort_unstable();
+    /// assert_eq!(sorted, [0, 1, 2]);
+    /// for (i, &p) in perm.iter().enumerate() {
+    ///     assert_eq!(iperm[p as usize] as usize, i);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the length of `perm` or `iperm` is not the
+    /// number of vertices.
+    pub fn node_nd(mut self, perm: &mut [Idx], iperm: &mut [Idx]) -> Result<()> {
+        self.options[option::Numbering::INDEX] = option::Numbering::C.value();
+
+        let nvtxs = self.xadj.len() as Idx - 1;
+        let perm_len = Idx::try_from(perm.len()).expect("perm array larger than Idx::MAX");
+        let iperm_len = Idx::try_from(iperm.len()).expect("iperm array larger than Idx::MAX");
+        assert_eq!(
+            perm_len, nvtxs,
+            "perm.len() must be equal to the number of vertices",
+        );
+        assert_eq!(
+            iperm_len, nvtxs,
+            "iperm.len() must be equal to the number of vertices",
+        );
+
+        if nvtxs == 0 {
+            // METIS does not handle empty graphs; there is nothing to order.
+            return Ok(());
+        }
+
+        let perm = perm.as_mut_ptr();
+        let iperm = iperm.as_mut_ptr();
+        unsafe {
+            m::METIS_NodeND(
+                &nvtxs as *const Idx as *mut Idx,
+                slice_to_mut_ptr(self.xadj),
+                slice_to_mut_ptr(self.adjncy),
+                self.vwgt
+                    .map_or_else(ptr::null_mut, |s| slice_to_mut_ptr(s)),
+                slice_to_mut_ptr(&self.options),
+                perm,
+                iperm,
+            )
+            .wrap()?;
+        }
+        Ok(())
+    }
 }
 
 /// Error raised when the mesh data fed to [`Mesh::new`] cannot be safely passed
